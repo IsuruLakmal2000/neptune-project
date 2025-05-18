@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Box3, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
@@ -6,8 +7,8 @@ const TARGET_SIZE = 0.1;
 let selectedBuilding = 'building1';
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.z = 3.0;
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.z = 3;
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -45,9 +46,8 @@ function loadBuildingModels() {
 
 loadBuildingModels();
 
-
 const loader = new THREE.TextureLoader();
-const earthTexture = loader.load('/textures/earth.jpg');
+const earthTexture = loader.load('/textures/planets/mars2.jpg');
 const bumpMap = loader.load('/textures/details.png');
 const specularMap = loader.load('/textures/earth_specular.jpg');
 
@@ -59,20 +59,41 @@ const material = new THREE.MeshPhongMaterial({
   specular: new THREE.Color('grey'),
 });
 
-const geometry = new THREE.SphereGeometry(1, 164, 164);
+const geometry = new THREE.SphereGeometry(1, 1640, 1640);
 const sphere = new THREE.Mesh(geometry, material);
 scene.add(sphere);
 
-const ambientLight = new THREE.AmbientLight(0x333333, 10);
+const ambientLight = new THREE.AmbientLight(0x333333);
 scene.add(ambientLight);
 
-// Fixed light in scene, does NOT move with sphere
-const pointerLight = new THREE.PointLight(0xffffff, 50, 50);
-pointerLight.position.set(1, 3, 5);
-scene.add(pointerLight);
+// Directional light fixed in world space (top-right)
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+directionalLight.position.set(3, 5, 3);
+scene.add(directionalLight);
 
-const starTexture = loader.load('/textures/galaxy.png');
-scene.background = starTexture;
+// Animate stars background by rotating a large sphere with the star texture
+const starGeo = new THREE.SphereGeometry(50, 64, 64);
+const starMat = new THREE.MeshBasicMaterial({
+  map: loader.load('/textures/galaxy.png'),
+  side: THREE.BackSide,
+});
+const starSphere = new THREE.Mesh(starGeo, starMat);
+scene.add(starSphere);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+
+// --- Adjust user drag rotation speed based on zoom ---
+const baseRotateSpeed = 1.0; // default OrbitControls rotateSpeed
+controls.rotateSpeed = baseRotateSpeed;
+
+function updateRotateSpeed() {
+  const zoom = camera.position.length();
+  // Map zoom range [2, 10] to speed factor [0.5, 1]
+  const speedFactor = Math.max(0.5, Math.min(1, (zoom - 2) / 8 + 0.5));
+  controls.rotateSpeed = baseRotateSpeed * speedFactor;
+}
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -83,21 +104,33 @@ const buildings = {
   building3: new THREE.ConeGeometry(0.1, 0.3, 4),
 };
 
-let currentBuilding = createBuilding(selectedBuilding);
-scene.add(currentBuilding);
-
 const placementPoints = [];
 const popup = document.getElementById('popup');
 const popupBuildingButtons = document.querySelectorAll('#popup button');
 let selectedPlacementPoint = null;
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// Store references to placed buildings for color editing
+const placedBuildings = [];
 
-// Create 10 dummy placement points
+// Add a popup for color selection
+const colorPopup = document.createElement('div');
+colorPopup.style.display = 'none';
+colorPopup.style.position = 'absolute';
+colorPopup.style.background = '#fff';
+colorPopup.style.padding = '10px';
+colorPopup.style.border = '1px solid #333';
+colorPopup.style.borderRadius = '8px';
+colorPopup.style.zIndex = 100;
+colorPopup.innerHTML = `
+  <label>Change Color:</label>
+  <input type="color" id="buildingColorPicker" value="#888888" style="margin:0 8px;">
+  <button id="applyColorBtn">Apply</button>
+`;
+document.body.appendChild(colorPopup);
+
+let selectedBuildingForColor = null;
+
+// Create 10 dummy placement points (add to sphere, but offset so marker base touches the sphere surface)
 for (let i = 0; i < 10; i++) {
   const point = new THREE.Mesh(
     new THREE.SphereGeometry(0.02, 16, 16),
@@ -105,10 +138,11 @@ for (let i = 0; i < 10; i++) {
   );
   const phi = Math.acos(2 * Math.random() - 1);
   const theta = Math.random() * 2 * Math.PI;
-point.position.setFromSphericalCoords(1.02, phi, theta);
-sphere.add(point);  // Add point as child of sphere
-placementPoints.push(point);
-
+  // Place the center of the marker sphere at radius 1 - markerRadius so its base touches the planet
+  
+  point.position.setFromSphericalCoords(1, phi, theta);
+  sphere.add(point);
+  placementPoints.push(point);
 }
 
 function createBuilding(type) {
@@ -120,6 +154,18 @@ function createBuilding(type) {
   return model.clone(true);  // deep clone to avoid shared state
 }
 
+// Fix: Deep clone materials for each placed building so color changes are independent
+function cloneMaterials(obj) {
+  obj.traverse(child => {
+    if (child.isMesh && child.material) {
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(mat => mat.clone());
+      } else {
+        child.material = child.material.clone();
+      }
+    }
+  });
+}
 
 function onMouseMove(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -135,6 +181,10 @@ function onMouseClick(event) {
     popup.style.display = 'block';
     popup.style.left = `${event.clientX}px`;
     popup.style.top = `${event.clientY}px`;
+  } else {
+    // Hide popup if clicking elsewhere
+    popup.style.display = 'none';
+    selectedPlacementPoint = null;
   }
 }
 
@@ -144,63 +194,151 @@ popupBuildingButtons.forEach((button) => {
       const buildingType = button.dataset.building;
       const building = createBuilding(buildingType);
       if (!building) return;
-normalizeModelScale(building);
+      normalizeModelScale(building);
 
-building.position.copy(selectedPlacementPoint.position);
+      // Clone materials so each building has its own
+      cloneMaterials(building);
 
+      // Calculate normal at placement point
+      const normal = selectedPlacementPoint.position.clone().normalize();
 
-const normal = selectedPlacementPoint.position.clone().normalize();
+      // Align building "up" to the normal
+      building.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
 
-building.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-building.rotateX(Math.PI/2*3); 
-sphere.add(building);
+      // Apply your custom rotation after aligning to normal
+      building.rotateX(Math.PI / 2 * 3);
+
+      // Compute bounding box after scaling and rotation
+      building.updateMatrixWorld(true);
+
+      // Find the lowest vertex along the normal direction (relative to building's local origin)
+      let minProj = Infinity;
+      building.traverse((child) => {
+        if (child.isMesh) {
+          const posAttr = child.geometry.attributes.position;
+          for (let i = 0; i < posAttr.count; i++) {
+            const vertex = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+            vertex.applyMatrix4(child.matrixWorld);
+            // Project from building.position (not from selectedPlacementPoint)
+            const proj = vertex.clone().sub(building.position).dot(normal);
+            if (proj < minProj) minProj = proj;
+          }
+        }
+      });
+
+      // Set building position at the sphere surface (not at the marker center)
+      // The marker's center is at radius 1 - markerRadius, so we need to move the building to radius 1
+      const markerRadius = 0.02;
+      const sphereSurface = selectedPlacementPoint.position.clone().normalize().multiplyScalar(1);
+
+      // Offset building so its base touches the sphere surface
+      building.position.copy(sphereSurface).sub(normal.clone().multiplyScalar(minProj));
+
+      scene.add(building);
+      placedBuildings.push(building); // Track placed building
       popup.style.display = 'none';
       selectedPlacementPoint = null;
     }
   });
 });
 
+// Add event listener for picking placed buildings
+renderer.domElement.addEventListener('click', function (event) {
+  // Ignore if popup is open for placement
+  if (popup.style.display === 'block') return;
+
+  // Calculate mouse position in normalized device coordinates
+  const rect = renderer.domElement.getBoundingClientRect();
+  const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  const mouseVec = new THREE.Vector2(mouseX, mouseY);
+
+  raycaster.setFromCamera(mouseVec, camera);
+  const intersects = raycaster.intersectObjects(placedBuildings, true);
+
+  if (intersects.length > 0) {
+    // Find the root building object (in case of GLTF hierarchy)
+    let obj = intersects[0].object;
+    while (obj.parent && !placedBuildings.includes(obj)) {
+      obj = obj.parent;
+    }
+    selectedBuildingForColor = obj;
+
+    // Show color popup at mouse position
+    colorPopup.style.display = 'block';
+    colorPopup.style.left = `${event.clientX}px`;
+    colorPopup.style.top = `${event.clientY}px`;
+  } else {
+    colorPopup.style.display = 'none';
+    selectedBuildingForColor = null;
+  }
+});
+
+// Handle color change
+document.getElementById('applyColorBtn').onclick = function () {
+  if (selectedBuildingForColor) {
+    const color = document.getElementById('buildingColorPicker').value;
+    selectedBuildingForColor.traverse((child) => {
+      if (child.isMesh && child.material) {
+        // If material is an array, set all
+        if (Array.isArray(child.material)) {
+          child.material.forEach(mat => {
+            if (mat.color) mat.color.set(color);
+          });
+        } else if (child.material.color) {
+          child.material.color.set(color);
+        }
+      }
+    });
+    colorPopup.style.display = 'none';
+    selectedBuildingForColor = null;
+  }
+};
+
+// Hide color popup if clicking elsewhere
+window.addEventListener('mousedown', (e) => {
+  if (
+    colorPopup.style.display === 'block' &&
+    !colorPopup.contains(e.target)
+  ) {
+    colorPopup.style.display = 'none';
+    selectedBuildingForColor = null;
+  }
+});
 
 window.addEventListener('mousemove', onMouseMove);
 window.addEventListener('click', onMouseClick);
 
-// --- NEW: Sphere rotation with mouse drag ---
-
-let isDragging = false;
-let previousMousePosition = { x: 0, y: 0 };
-
-renderer.domElement.addEventListener('mousedown', (event) => {
-  isDragging = true;
-  previousMousePosition.x = event.clientX;
-  previousMousePosition.y = event.clientY;
+// Handle window resize for responsiveness
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-renderer.domElement.addEventListener('mouseup', () => {
-  isDragging = false;
-});
-
-renderer.domElement.addEventListener('mousemove', (event) => {
-  if (isDragging) {
-    const deltaMove = {
-      x: event.clientX - previousMousePosition.x,
-      y: event.clientY - previousMousePosition.y,
-    };
-
-    // Rotate sphere around Y axis (horizontal drag)
-    sphere.rotation.y += deltaMove.x * 0.005;
-
-    // Rotate sphere around X axis (vertical drag)
-    sphere.rotation.x += deltaMove.y * 0.005;
-
-    previousMousePosition.x = event.clientX;
-    previousMousePosition.y = event.clientY;
-  }
-});
-
-// --- End of sphere rotation code ---
 
 function animate() {
   requestAnimationFrame(animate);
+
+  updateRotateSpeed();
+
+  controls.update();
+
+  // Animate the star background slowly for a real-world effect
+  // Reduce star rotation speed when camera is zoomed in
+  const zoom = camera.position.length();
+  // zoom: close to sphere = ~3, far = higher
+  // Map zoom range [2, 10] to speed factor [0.5, 1]
+  const speedFactor = Math.max(0.5, Math.min(1, (zoom - 2) / 8 + 0.5));
+  starSphere.rotation.y += 0.0005 * speedFactor;
+  starSphere.rotation.x += 0.0001 * speedFactor;
+
+  // Always position the light in front of the camera, pointing at the sphere
+  const cameraDirection = new THREE.Vector3();
+  camera.getWorldDirection(cameraDirection);
+  directionalLight.position.copy(camera.position).add(cameraDirection.multiplyScalar(-2));
+  directionalLight.target.position.copy(sphere.position);
+  directionalLight.target.updateMatrixWorld();
+
   renderer.render(scene, camera);
 }
 
