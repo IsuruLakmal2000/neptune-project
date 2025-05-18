@@ -2,6 +2,7 @@ body {
   margin: 0;
   overflow: hidden;
   display: flex;
+  font-family: 'Lato', Arial, sans-serif;
 }
 
 canvas {
@@ -9,23 +10,26 @@ canvas {
   display: block;
 }
 
-#popup {
+.building-popup {
+  
   z-index: 10;
   position: absolute;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
   padding: 15px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-  font-family: Arial, sans-serif;
+  border: 1px solid rgba(255,255,255,0.28);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+  font-family: 'Lato', Arial, sans-serif;
   text-align: center;
   animation: fadeIn 0.3s ease-in-out;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 #popup h4 {
   margin: 0 0 10px;
   font-size: 18px;
-  color: #333;
+  color: #ffffff;
 }
 
 #popup button {
@@ -34,7 +38,7 @@ canvas {
   padding: 8px 15px;
   font-size: 14px;
   color: #fff;
-  background-color: #007bff;
+  background-color: #0a0a0a;
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -42,7 +46,7 @@ canvas {
 }
 
 #popup button:hover {
-  background-color: #0056b3;
+  background-color: #272727;
 }
 
 @keyframes fadeIn {
@@ -57,3 +61,23 @@ canvas {
 }
 
 /* Removed #sidebar styles */
+
+.glass-info {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  padding: 16px 28px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff9f9;
+  font-size: 20px;
+  font-weight: 600;
+  z-index: 20;
+  letter-spacing: 0.5px;
+  font-family: 'Lato', Arial, sans-serif;
+  text-align: right;
+}

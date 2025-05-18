@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Interactive 3D Globe</title>
   <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css?family=Lato:400,700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="popup" style="display: none; position: absolute; background: white; padding: 10px; border: 1px solid black;">
+  <div id="available-buildings" class="glass-info">
+    <span>12/300 available buildings</span>
+  </div>
+  <div id="popup" class="building-popup" style="display: none;">
     <h4>Select a Building</h4>
     <button data-building="building1">Building 1</button>
     <button data-building="building2">Building 2</button>

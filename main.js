@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Box3, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createSatellite } from './satellite.js';
+import { createBuilding } from './createBuilding.js';
 
 const TARGET_SIZE = 0.1;
 let selectedBuilding = 'building1';
@@ -63,6 +65,9 @@ const geometry = new THREE.SphereGeometry(1, 1640, 1640);
 const sphere = new THREE.Mesh(geometry, material);
 scene.add(sphere);
 
+// --- Add satellite ---
+
+
 const ambientLight = new THREE.AmbientLight(0x333333);
 scene.add(ambientLight);
 
@@ -98,11 +103,6 @@ function updateRotateSpeed() {
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-const buildings = {
-  building1: new THREE.BoxGeometry(0.05, 0.1, 0.05),
-  building2: new THREE.CylinderGeometry(0.1, 0.1, 0.3, 32),
-  building3: new THREE.ConeGeometry(0.1, 0.3, 4),
-};
 
 const placementPoints = [];
 const popup = document.getElementById('popup');
@@ -130,29 +130,46 @@ document.body.appendChild(colorPopup);
 
 let selectedBuildingForColor = null;
 
-// Create 10 dummy placement points (add to sphere, but offset so marker base touches the sphere surface)
-for (let i = 0; i < 10; i++) {
-  const point = new THREE.Mesh(
-    new THREE.SphereGeometry(0.02, 16, 16),
-    new THREE.MeshBasicMaterial({ color: 0xff0000 })
-  );
-  const phi = Math.acos(2 * Math.random() - 1);
-  const theta = Math.random() * 2 * Math.PI;
-  // Place the center of the marker sphere at radius 1 - markerRadius so its base touches the planet
-  
-  point.position.setFromSphericalCoords(1, phi, theta);
-  sphere.add(point);
-  placementPoints.push(point);
+
+
+// Example: Predefined pinpoints as [latitude, longitude] in degrees
+const predefinedPinpoints = [
+  [0, 0],
+  [30, 45],
+  [30, 55],
+  [-45, 90],
+  [60, -60],
+  [-30, -120],
+  [15, 180],
+  [-60, 135],
+  [45, -90],
+  [75, 60],
+  [-75, -45]
+];
+
+// Clear placementPoints array if needed
+placementPoints.length = 0;
+
+// Helper to convert lat/lon to Cartesian coordinates on sphere of radius 1
+function latLonToVector3(lat, lon, radius = 1) {
+  const phi = (90 - lat) * (Math.PI / 180); // latitude to polar angle
+  const theta = (lon + 180) * (Math.PI / 180); // longitude to azimuthal angle
+  const x = radius * Math.sin(phi) * Math.cos(theta);
+  const y = radius * Math.cos(phi);
+  const z = radius * Math.sin(phi) * Math.sin(theta);
+  return new THREE.Vector3(x, y, z);
 }
 
-function createBuilding(type) {
-  const model = buildingModels[type];
-  if (!model) {
-    console.warn(`Model for ${type} not loaded yet`);
-    return null;
-  }
-  return model.clone(true);  // deep clone to avoid shared state
-}
+// Create placement points at predefined positions
+predefinedPinpoints.forEach(([lat, lon]) => {
+  const point = new THREE.Mesh(
+    new THREE.SphereGeometry(0.02, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0x888888 })
+  );
+  point.position.copy(latLonToVector3(lat, lon, 1));
+  sphere.add(point);
+  placementPoints.push(point);
+});
 
 // Fix: Deep clone materials for each placed building so color changes are independent
 function cloneMaterials(obj) {
@@ -192,7 +209,8 @@ popupBuildingButtons.forEach((button) => {
   button.addEventListener('click', () => {
     if (selectedPlacementPoint) {
       const buildingType = button.dataset.building;
-      const building = createBuilding(buildingType);
+      // Pass buildingModels as second argument
+      const building = createBuilding(buildingType, buildingModels);
       if (!building) return;
       normalizeModelScale(building);
 
@@ -227,7 +245,6 @@ popupBuildingButtons.forEach((button) => {
       });
 
       // Set building position at the sphere surface (not at the marker center)
-      // The marker's center is at radius 1 - markerRadius, so we need to move the building to radius 1
       const markerRadius = 0.02;
       const sphereSurface = selectedPlacementPoint.position.clone().normalize().multiplyScalar(1);
 
@@ -236,6 +253,14 @@ popupBuildingButtons.forEach((button) => {
 
       scene.add(building);
       placedBuildings.push(building); // Track placed building
+
+      // --- Remove the used pinpoint from the scene and placementPoints array ---
+      const idx = placementPoints.indexOf(selectedPlacementPoint);
+      if (idx !== -1) {
+        scene.remove(selectedPlacementPoint);
+        placementPoints.splice(idx, 1);
+      }
+
       popup.style.display = 'none';
       selectedPlacementPoint = null;
     }
@@ -309,6 +334,35 @@ window.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', onMouseMove);
 window.addEventListener('click', onMouseClick);
 
+// --- Satellite management ---
+const satelliteAnimators = [];
+
+// Add the first satellite by default
+//satelliteAnimators.push(createSatellite(scene, 1));
+
+// --- Add "Add Satellite" button to the DOM ---
+const addSatelliteBtn = document.createElement('button');
+addSatelliteBtn.textContent = 'Add Satellite';
+addSatelliteBtn.style.position = 'fixed';
+addSatelliteBtn.style.left = '50%';
+addSatelliteBtn.style.bottom = '32px';
+addSatelliteBtn.style.transform = 'translateX(-50%)';
+addSatelliteBtn.style.padding = '12px 24px';
+addSatelliteBtn.style.fontSize = '18px';
+addSatelliteBtn.style.background = '#222';
+addSatelliteBtn.style.color = '#fff';
+addSatelliteBtn.style.border = 'none';
+addSatelliteBtn.style.borderRadius = '8px';
+addSatelliteBtn.style.cursor = 'pointer';
+addSatelliteBtn.style.zIndex = 200;
+document.body.appendChild(addSatelliteBtn);
+
+addSatelliteBtn.onclick = () => {
+  // Add a new satellite at a random orbit radius between 1.15 and 1.35
+  const orbitRadius = 1.15 + Math.random() * 0.2;
+  satelliteAnimators.push(createSatellite(scene, orbitRadius));
+};
+
 // Handle window resize for responsiveness
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -338,6 +392,9 @@ function animate() {
   directionalLight.position.copy(camera.position).add(cameraDirection.multiplyScalar(-2));
   directionalLight.target.position.copy(sphere.position);
   directionalLight.target.updateMatrixWorld();
+
+  // Animate all satellites
+  satelliteAnimators.forEach(fn => fn());
 
   renderer.render(scene, camera);
 }
